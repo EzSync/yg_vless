@@ -11,168 +11,54 @@ green() { echo -e "\e[1;32m$1\033[0m"; }
 yellow() { echo -e "\e[1;33m$1\033[0m"; }
 purple() { echo -e "\e[1;35m$1\033[0m"; }
 reading() { read -p "$(red "$1")" "$2"; }
-
+export LC_ALL=C
 USERNAME=$(whoami)
 HOSTNAME=$(hostname)
 
-[[ "$HOSTNAME" == "s1.ct8.pl" ]] && export WORKDIR="domains/${USERNAME}.ct8.pl/logs" || export WORKDIR="domains/${USERNAME}.serv00.net/logs"
-[ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
-#ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 > /dev/null 2>&1
+export UUID=${UUID:-'743f8207-40d0-4440-9a44-97be0fea69c1'}  
+export ARGO_DOMAIN=${ARGO_DOMAIN:-'111'}   
+export ARGO_AUTH=${ARGO_AUTH:-'999'}     
+export vless_port=${vless_port:-'123'}    
+export vmess_port=${vmess_port:-'456'}  
+export hy2_port=${hy2_port:-'789'}       
+export IP=${IP:-'888'}                  
+export reym=${reym:-'www.speedtest.net'}
 
-read_ip() {
-cat ip.txt
-reading "请输入上面三个IP中的任意一个 (建议默认回车自动选择可用IP): " IP
-if [[ -z "$IP" ]]; then
+[[ "$HOSTNAME" == "s1.ct8.pl" ]] && WORKDIR="domains/${USERNAME}.ct8.pl/logs" || WORKDIR="domains/${USERNAME}.serv00.net/logs"
+[ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
+ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 > /dev/null 2>&1
+
+read_ip(){
+nb=$(echo "$HOSTNAME" | cut -d '.' -f 1 | tr -d 's')
+ym=("$HOSTNAME" "cache$nb.serv00.com" "web$nb.serv00.com")
+rm -rf $WORKDIR/ip.txt
+for ym in "${ym[@]}"; do
+# 引用frankiejun API
+response=$(curl -s "https://ss.botai.us.kg/api/getip?host=$ym")
+if [[ -z "$response" ]]; then
+for ip in "${ym[@]}"; do
+dig @8.8.8.8 +time=2 +short $ip >> $WORKDIR/ip.txt
+sleep 1  
+done
+break
+else
+echo "$response" | while IFS='|' read -r ip status; do
+if [[ $status == "Accessible" ]]; then
+echo "$ip: 可用"  >> $WORKDIR/ip.txt
+else
+echo "$ip: 被墙 (Argo与CDN回源节点、proxyip依旧有效)"  >> $WORKDIR/ip.txt
+fi	
+done
+fi
+done
 IP=$(grep -m 1 "可用" ip.txt | awk -F ':' '{print $1}')
 if [ -z "$IP" ]; then
 IP=$(head -n 1 ip.txt | awk -F ':' '{print $1}')
 fi
-fi
-green "你选择的IP为: $IP"
-}
-
-read_uuid() {
-        reading "请输入统一的uuid密码 (建议回车默认随机): " UUID
-        if [[ -z "$UUID" ]]; then
-	   UUID=$(uuidgen -r)
-        fi
-	green "你的uuid为: $UUID"
-}
-
-read_reym() {
-        yellow "方式一：回车使用CF域名，支持proxyip+非标端口反代ip功能 (推荐)"
-	yellow "方式二：输入 s 表示使用Serv00自带域名，不支持proxyip功能 (推荐)"
-        yellow "方式三：也可以自定义域名，注意要符合reality域名规则"
-        reading "请输入reality域名 【请选择 回车 或者 s 或者 输入域名】: " reym
-        if [[ -z "$reym" ]]; then
-           reym=www.speedtest.net
-	elif [[ "$reym" == "s" || "$reym" == "S" ]]; then
-           reym=$USERNAME.serv00.net
-        fi
-	green "你的reality域名为: $reym"
-}
-
-read_vless_port() {
-    while true; do
-        reading "请输入vless-reality端口 (面板开放的tcp端口): " vless_port
-        if [[ "$vless_port" =~ ^[0-9]+$ ]] && [ "$vless_port" -ge 1 ] && [ "$vless_port" -le 65535 ]; then
-            green "你的vless-reality端口为: $vless_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的TCP端口"
-        fi
-    done
-}
-
-read_hy2_port() {
-    while true; do
-        reading "请输入hysteria2端口 (面板开放的UDP端口): " hy2_port
-        if [[ "$hy2_port" =~ ^[0-9]+$ ]] && [ "$hy2_port" -ge 1 ] && [ "$hy2_port" -le 65535 ]; then
-            green "你的hysteria2端口为: $hy2_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的UDP端口"
-        fi
-    done
-}
-
-read_vmess_port() {
-    while true; do
-        reading "请输入vmess-ws端口 (面板开放的tcp端口): " vmess_port
-        if [[ "$vmess_port" =~ ^[0-9]+$ ]] && [ "$vmess_port" -ge 1 ] && [ "$vmess_port" -le 65535 ]; then
-            green "你的vmess端口为: $vmess_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的tcp端口"
-        fi
-    done
-}
-
-install_singbox() {
-if [[ -e $WORKDIR/list.txt ]]; then
-yellow "已安装sing-box，请先选择2卸载，再执行安装" && exit
-fi
-yellow "请确保在Serv00网页设置中已开放3个端口：2个tcp端口、1个udp端口"
-sleep 2
-        cd $WORKDIR
-	echo
-	read_ip
- 	echo
-        read_reym
-	echo
-	read_uuid
- 	echo
-        read_vless_port
-	echo
-        read_vmess_port
-	echo
-        read_hy2_port
-	echo
-        sleep 2
-        argo_configure
-	echo
-        download_and_run_singbox
-        get_links
-}
-
-uninstall_singbox() {
-  reading "\n确定要卸载吗？【y/n】: " choice
-    case "$choice" in
-       [Yy])
-          ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 2>/dev/null
-          rm -rf $WORKDIR
-	  crontab -l | grep -v "serv00keep" >rmcron
-          crontab rmcron >/dev/null 2>&1
-          rm rmcron
-          clear
-          green "已完全卸载"
-          ;;
-        [Nn]) exit 0 ;;
-    	*) red "无效的选择，请输入y或n" && menu ;;
-    esac
-}
-
-kill_all_tasks() {
-reading "\n清理所有进程并清空所有安装内容，将退出ssh连接，确定继续清理吗？【y/n】: " choice
-  case "$choice" in
-    [Yy]) 
-    ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 2>/dev/null
-    crontab -l | grep -v "serv00keep" >rmcron
-    crontab rmcron >/dev/null 2>&1
-    rm rmcron
-    find ~ -type f -exec chmod 644 {} \; 2>/dev/null
-    find ~ -type d -exec chmod 755 {} \; 2>/dev/null
-    find ~ -type f -exec rm -f {} \; 2>/dev/null
-    find ~ -type d -empty -exec rmdir {} \; 2>/dev/null
-    find ~ -exec rm -rf {} \; 2>/dev/null
-    killall -9 -u $(whoami)
-    ;;
-    *) menu ;;
-  esac
 }
 
 # Generating argo Config
 argo_configure() {
-  while true; do
-    yellow "方式一：Argo临时隧道 (无需域名，推荐)"
-    yellow "方式二：Argo固定隧道 (需要域名，需要CF设置提取Token)"
-    echo -e "${red}注意：${purple}Argo固定隧道使用Token时，需要在cloudflare后台设置隧道端口，该端口必须与vmess-ws的tcp端口一致)${re}"
-    reading "输入 g 表示使用Argo固定隧道，回车跳过表示使用Argo临时隧道 【请选择 g 或者 回车】: " argo_choice
-    if [[ "$argo_choice" != "g" && "$argo_choice" != "G" && -n "$argo_choice" ]]; then
-        red "无效的选择，请输入 g 或回车"
-        continue
-    fi
-    if [[ "$argo_choice" == "g" || "$argo_choice" == "G" ]]; then
-        reading "请输入argo固定隧道域名: " ARGO_DOMAIN
-        green "你的argo固定隧道域名为: $ARGO_DOMAIN"
-        reading "请输入argo固定隧道密钥（Json或Token。当你粘贴Token时，必须以ey开头）: " ARGO_AUTH
-        green "你的argo固定隧道密钥为: $ARGO_AUTH"
-    else
-        green "使用Argo临时隧道"
-    fi
-    break
-done
-
   if [[ $ARGO_AUTH =~ TunnelSecret ]]; then
     echo $ARGO_AUTH > tunnel.json
     cat > tunnel.yml << EOF
@@ -249,11 +135,8 @@ for entry in "${FILE_INFO[@]}"; do
 done
 wait
 
-output=$(./"$(basename ${FILE_MAP[web]})" generate reality-keypair)
-private_key=$(echo "${output}" | awk '/PrivateKey:/ {print $2}')
-public_key=$(echo "${output}" | awk '/PublicKey:/ {print $2}')
-echo "${private_key}" > private_key.txt
-echo "${public_key}" > public_key.txt
+private_key=$(<private_key.txt)
+public_key=$(<public_key.txt)
 
 openssl ecparam -genkey -name prime256v1 -out "private.key"
 openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=$USERNAME.serv00.net"
@@ -373,7 +256,7 @@ EOF
 
 if [ -e "$(basename ${FILE_MAP[web]})" ]; then
     nohup ./"$(basename ${FILE_MAP[web]})" run -c config.json >/dev/null 2>&1 &
-    sleep 5
+    sleep 2
     pgrep -x "$(basename ${FILE_MAP[web]})" > /dev/null && green "$(basename ${FILE_MAP[web]}) is running" || { red "$(basename ${FILE_MAP[web]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[web]})" && nohup ./"$(basename ${FILE_MAP[web]})" run -c config.json >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[web]}) restarted"; }
 fi
 
@@ -383,33 +266,31 @@ if [ -e "$(basename ${FILE_MAP[bot]})" ]; then
     elif [[ $ARGO_AUTH =~ TunnelSecret ]]; then
       args="tunnel --edge-ip-version auto --config tunnel.yml run"
     else
-      rm -rf boot.log
       args="tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile boot.log --loglevel info --url http://localhost:$vmess_port"
     fi
     nohup ./"$(basename ${FILE_MAP[bot]})" $args >/dev/null 2>&1 &
     sleep 10
-    pgrep -x "$(basename ${FILE_MAP[bot]})" > /dev/null && green "$(basename ${FILE_MAP[bot]}) is running" || { red "$(basename ${FILE_MAP[bot]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[bot]})" && nohup ./"$(basename ${FILE_MAP[bot]})" "${args}" >/dev/null 2>&1 & sleep 5; purple "$(basename ${FILE_MAP[bot]}) restarted"; }
+    pgrep -x "$(basename ${FILE_MAP[bot]})" > /dev/null && green "$(basename ${FILE_MAP[bot]}) is running" || { red "$(basename ${FILE_MAP[bot]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[bot]})" && nohup ./"$(basename ${FILE_MAP[bot]})" "${args}" >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[bot]}) restarted"; }
 fi
-sleep 2
-rm -f "$(basename ${FILE_MAP[web]})" "$(basename ${FILE_MAP[bot]})"
-if pgrep -x "$(basename ${FILE_MAP[web]})" > /dev/null; then
-green "主进程已启动成功"
-else
-red "主进程未启动，根据以下情况一一排查"
-yellow "1、网页端权限是否开启"
-yellow "2、端口是否设置错误(2个TCP、1个UDP)"
-yellow "3、尝试更换网页端3个端口并重装"
-yellow "4、选择5重置"
-yellow "5、当前Serv00服务器炸了？等会再试"
-exit
-fi
+sleep 3
+rm -f "$(basename ${FILE_MAP[web]})"
 }
 
 get_argodomain() {
   if [[ -n $ARGO_AUTH ]]; then
     echo "$ARGO_DOMAIN"
   else
-    argodomain=$(grep -oE 'https://[[:alnum:]+\.-]+\.trycloudflare\.com' boot.log 2>/dev/null | sed 's@https://@@')
+    local retry=0
+    local max_retries=6
+    local argodomain=""
+    while [[ $retry -lt $max_retries ]]; do
+      ((retry++))
+      argodomain=$(grep -oE 'https://[[:alnum:]+\.-]+\.trycloudflare\.com' boot.log | sed 's@https://@@') 
+      if [[ -n $argodomain ]]; then
+        break
+      fi
+      sleep 1
+    done
     echo "$argodomain"
   fi
 }
@@ -418,29 +299,9 @@ get_links(){
 argodomain=$(get_argodomain)
 echo -e "\e[1;32mArgo域名:\e[1;35m${argodomain}\e[0m\n"
 if [ -z ${argodomain} ]; then
-yellow "Argo临时域名暂时未生成，两个Argo节点不可用，其他未被墙的节点依旧可用"
+red "Argo域名生成失败，当前Argo节点不可用"
 fi
-echo
-green "安装进程保活"
-curl -sSL https://raw.githubusercontent.com/yonggekkk/Cloudflare_vless_trojan/main/serv00keep.sh -o serv00keep.sh && chmod +x serv00keep.sh
-sed -i '' -e '18s|743f8207-40d0-4440-9a44-97be0fea69c1|'"$UUID"'|' serv00keep.sh
-sed -i '' -e '21s|123|'"$vless_port"'|' serv00keep.sh
-sed -i '' -e '22s|456|'"$vmess_port"'|' serv00keep.sh
-sed -i '' -e '23s|789|'"$hy2_port"'|' serv00keep.sh
-sed -i '' -e '24s|888|'"$IP"'|' serv00keep.sh
-sed -i '' -e '25s|www.speedtest.net|'"$reym"'|' serv00keep.sh
-if [[ "${argodomain}" == *"trycloudflare.com"* ]] || [ -z "${argodomain}" ]; then
-sed -i '' -e '19s|111||' serv00keep.sh
-sed -i '' -e '20s|999||' serv00keep.sh
-else
-sed -i '' -e '19s|111|'"$ARGO_DOMAIN"'|' serv00keep.sh
-sed -i '' -e '20s|999|'"$ARGO_AUTH"'|' serv00keep.sh
-fi
-if ! crontab -l 2>/dev/null | grep -q 'serv00keep'; then
-(crontab -l 2>/dev/null; echo "*/2 * * * * if ! ps aux | grep '[c]onfig' > /dev/null; then /bin/bash ${WORKDIR}/serv00keep.sh; fi") | crontab -
-fi
-green "进程保活安装完毕，默认每2分钟执行一次，运行 crontab -e 可自行修改cron定时时间" && sleep 2
-ISP=$(curl -sL --max-time 5 https://speed.cloudflare.com/meta | awk -F\" '{print $26}' | sed -e 's/ /_/g' || echo "0")
+ISP=$(curl -s --max-time 5 https://speed.cloudflare.com/meta | awk -F\" '{print $26}' | sed -e 's/ /_/g' || echo "0")
 get_name() { if [ "$HOSTNAME" = "s1.ct8.pl" ]; then SERVER="CT8"; else SERVER=$(echo "$HOSTNAME" | cut -d '.' -f 1); fi; echo "$SERVER"; }
 NAME="$ISP-$(get_name)"
 rm -rf jh.txt
@@ -482,14 +343,14 @@ CF节点落地到非CF网站的地区为：$IP所在地区
 -------------------------------------------------------------------------------------------------
 
 
-二、Vmess-ws分享链接三形态如下：
+二、Vmess-ws分享链接三形态如下 (如Argo域名生成失败，2 与 3 的Argo节点将不可用)：
 
 1、Vmess-ws主节点分享链接如下：
 (该节点默认不支持CDN，如果设置为CDN回源(需域名)：客户端地址可自行修改优选IP/域名，7个80系端口随便换，被墙依旧能用！)
 $vmws_link
 
 Argo域名：${argodomain}
-如果上面Argo临时域名未生成，以下 2 与 3 的Argo节点将不可用 (打开Argo固定/临时域名网页，显示HTTP ERROR 404说明正常可用)
+如果上面Argo临时域名未生成，以下 2 与 3 的Argo节点将不可用 (固定域名需到CF后台查看是否处于绿色健康状态)
 
 2、Vmess-ws-tls_Argo分享链接如下： 
 (该节点为CDN优选IP节点，客户端地址可自行修改优选IP/域名，6个443系端口随便换，被墙依旧能用！)
@@ -992,108 +853,11 @@ sleep 2
 rm -rf boot.log config.json sb.log core tunnel.yml tunnel.json fake_useragent_0.2.0.json
 }
 
-showlist(){
-if [[ -e $WORKDIR/list.txt ]]; then
-green "查看节点及proxyip/非标端口反代ip信息"
-cat $WORKDIR/list.txt
-else
-red "未安装sing-box" && exit
-fi
+install_singbox() {
+cd $WORKDIR
+read_ip
+argo_configure
+download_and_run_singbox
+get_links
 }
-
-showsbclash(){
-if [[ -e $WORKDIR/sing_box.json ]]; then
-green "Sing_box配置文件如下，可上传到订阅类客户端上使用："
-yellow "其中Argo节点为CDN优选IP节点，server地址可自行修改优选IP/域名，被墙依旧能用！"
-sleep 2
-cat $WORKDIR/sing_box.json 
-echo
-echo
-green "Clash_meta配置文件如下，可上传到订阅类客户端上使用："
-yellow "其中Argo节点为CDN优选IP节点，server地址可自行修改优选IP/域名，被墙依旧能用！"
-sleep 2
-cat $WORKDIR/clash_meta.yaml
-echo
-else
-red "未安装sing-box" && exit
-fi
-}
-
-#主菜单
-menu() {
-   clear
-   echo "========================================================="
-   purple "修改自Serv00|ct8老王sing-box安装脚本"
-   purple "转载请著名出自老王，请勿滥用"
-   green "甬哥Github项目  ：github.com/yonggekkk"
-   green "甬哥Blogger博客 ：ygkkk.blogspot.com"
-   green "甬哥YouTube频道 ：www.youtube.com/@ygkkk"
-   green "一键三协议共存：vless-reality、Vmess-ws(Argo)、hysteria2"
-   green "脚本使用视频教程：https://youtu.be/2VF9D6z2z7w"
-   green "当前脚本版本：V24.12.21 已支持进程保活"
-   echo "========================================================="
-   green  "1. 安装sing-box"
-   echo   "---------------------------------------------------------"
-   red    "2. 卸载sing-box"
-   echo   "---------------------------------------------------------"
-   green  "3. 查看节点及proxyip/非标端口反代ip"
-   echo   "---------------------------------------------------------"
-   green  "4. 查看sing-box与clash-meta配置文件"
-   echo   "---------------------------------------------------------"
-   yellow "5. 重置并清理所有服务进程(系统初始化)"
-   echo   "---------------------------------------------------------"
-   red    "0. 退出脚本"
-   echo   "========================================================="
-nb=$(echo "$HOSTNAME" | cut -d '.' -f 1 | tr -d 's')
-ym=("$HOSTNAME" "cache$nb.serv00.com" "web$nb.serv00.com")
-rm -rf $WORKDIR/ip.txt
-for ym in "${ym[@]}"; do
-# 引用frankiejun API
-response=$(curl -sL --connect-timeout 5 --max-time 7 "https://ss.botai.us.kg/api/getip?host=$ym")
-if [[ -z "$response" || "$response" == *unknown* ]]; then
-for ip in "${ym[@]}"; do
-dig @8.8.8.8 +time=2 +short $ip >> $WORKDIR/ip.txt
-sleep 1  
-done
-break
-else
-echo "$response" | while IFS='|' read -r ip status; do
-if [[ $status == "Accessible" ]]; then
-echo "$ip: 可用"  >> $WORKDIR/ip.txt
-else
-echo "$ip: 被墙 (Argo与CDN回源节点、proxyip依旧有效)"  >> $WORKDIR/ip.txt
-fi	
-done
-fi
-done
-snb=$(hostname | awk -F '.' '{print $1}')
-green "Serv00服务器名称：$snb"
-green "当前可选择的IP如下："
-cat $WORKDIR/ip.txt
-echo
-if [[ -e $WORKDIR/list.txt ]]; then
-green "已安装sing-box"
-ps aux | grep '[c]onfig' > /dev/null && green "主进程启动正常" || red "主进程未启动，请卸载后重装脚本"
-if ! crontab -l 2>/dev/null | grep -q 'serv00keep'; then
-(crontab -l 2>/dev/null; echo "*/2 * * * * if ! ps aux | grep '[c]onfig' > /dev/null; then /bin/bash ${WORKDIR}/serv00keep.sh; fi") | crontab -
-yellow "Cron保活丢失？已修复成功"
-else
-green "Cron保活运行正常"
-fi
-else
-red "未安装sing-box，请选择 1 进行安装" 
-fi
-   echo   "========================================================="
-   reading "请输入选择【0-5】: " choice
-   echo ""
-    case "${choice}" in
-        1) install_singbox ;;
-        2) uninstall_singbox ;; 
-        3) showlist ;;
-	4) showsbclash ;;
-        5) kill_all_tasks ;;
-	0) exit 0 ;;
-        *) red "无效的选项，请输入 0 到 5" ;;
-    esac
-}
-menu
+install_singbox
